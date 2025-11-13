@@ -22,159 +22,116 @@ An intelligent flashcard application powered by Gemini for language learning. It
 
 ---
 
-## Deploying to Google Cloud Platform (GCP)
+## Deploying to Firebase Hosting via Google Cloud Shell
 
-This guide details how to deploy the Gemini Flashcards app as a secure, scalable, and performant static website on GCP. We will use **Google Cloud Storage (GCS)** to host the files and a **global external HTTP(S) Load Balancer** with **Cloud CDN** to serve them.
+This guide details how to deploy the Gemini Flashcards app as a secure, scalable, and performant static web app using **Firebase Hosting**. The entire process can be completed within the Google Cloud Shell.
 
 ### Overview of the Architecture
 
-1.  **Cloud Storage:** A GCS bucket will store all the static application files (`index.html`, `.tsx`, `.css`, etc.).
-2.  **External Load Balancer:** This will provide a single, global IP address for your application.
-3.  **Cloud CDN:** Enabled on the load balancer's backend, this will cache your application's assets at Google's edge locations worldwide, ensuring low latency for all users.
-4.  **Google-managed SSL:** The load balancer will handle SSL termination, providing free, auto-renewing SSL certificates for your custom domain.
+-   **Firebase Hosting:** Provides fast and secure hosting for your web app, automatically provisioning a global CDN and SSL certificates.
+-   **Google Cloud Shell:** A browser-based shell environment with `gcloud`, `firebase-tools`, and `git` pre-installed, allowing you to manage and deploy your resources without any local setup.
 
 ### Prerequisites
 
-1.  **GCP Account:** A Google Cloud Platform account with billing enabled.
-2.  **gcloud CLI:** The [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) installed and authenticated on your local machine.
-3.  **Domain Name:** A registered domain name (e.g., `your-flashcards.com`). This is required to use HTTPS and a Google-managed SSL certificate.
+1.  **GCP Project:** A Google Cloud Platform account with a project created and billing enabled.
+2.  **Git Repository:** Your application code must be available in a Git repository (e.g., on GitHub, GitLab, or Cloud Source Repositories).
 
 ---
 
-### Step 1: GCP Project Setup
+### Step 1: Launch Cloud Shell & Clone Repository
 
-First, set up a GCP project and configure your local `gcloud` CLI.
+1.  **Open Google Cloud Shell:**
+    In the GCP Console, click the **Activate Cloud Shell** button (">_") in the top-right corner.
 
-1.  **Create a GCP Project:**
-    If you don't have one already, create a new project in the [GCP Console](https://console.cloud.google.com/). Note your **Project ID**.
-
-2.  **Configure gcloud CLI:**
-    Set your project and authenticate the CLI.
+2.  **Set Your Project:**
+    Ensure your Cloud Shell session is configured to use your target project.
     ```bash
-    # Set your project ID
     gcloud config set project YOUR_PROJECT_ID
-
-    # Authenticate with your GCP account
-    gcloud auth login
     ```
 
-3.  **Enable Necessary APIs:**
-    Enable the APIs for Compute Engine (for the load balancer) and Cloud Storage.
+3.  **Clone Your Git Repository:**
+    Clone the repository containing your application files into your Cloud Shell environment.
     ```bash
-    gcloud services enable compute.googleapis.com storage-component.googleapis.com
+    # Replace with your repository's URL
+    git clone https://github.com/your-username/your-repo-name.git
+    
+    # Navigate into the project directory
+    cd your-repo-name
     ```
 
-### Step 2: Create and Upload to Cloud Storage Bucket
+### Step 2: Prepare Files for Deployment
 
-Next, create a GCS bucket and upload your application files.
+Firebase Hosting serves files from a designated "public" directory. You need to create this directory and move your application source files into it.
 
-1.  **Create a GCS Bucket:**
-    The bucket name must be globally unique. It's a good practice to use a name related to your domain.
+1.  **Create the `public` Directory:**
     ```bash
-    # Replace BUCKET_NAME with a unique name (e.g., gemini-flashcards-assets)
-    gcloud storage buckets create gs://BUCKET_NAME --location=US-CENTRAL1
+    mkdir public
     ```
 
-2.  **Upload Application Files:**
-    From the root directory of the project, copy all files to your new bucket.
+2.  **Move Application Files:**
+    Move all the necessary files and directories into the `public` folder.
     ```bash
-    # The -m flag enables parallel uploads for speed
-    gcloud storage cp --recursive . gs://BUCKET_NAME
+    mv App.tsx components/ constants.ts context/ hooks/ index.html index.tsx types.ts public/
     ```
+    *Note: This command moves all essential app files. Files like `README.md` and `metadata.json` can remain in the root directory as they are not part of the running application.*
 
-3.  **Set Public Permissions:**
-    Make the objects in the bucket publicly readable so the load balancer can access them.
+### Step 3: Initialize Firebase Hosting
+
+Now, you will configure your project directory for Firebase.
+
+1.  **Log in to Firebase:**
+    The Firebase CLI is pre-installed in Cloud Shell. You just need to log in.
     ```bash
-    gcloud storage buckets add-iam-policy-binding gs://BUCKET_NAME \
-        --member=allUsers \
-        --role=roles/storage.objectViewer
+    firebase login
     ```
+    Follow the on-screen instructions to authorize the CLI.
 
-### Step 3: Set Up the Load Balancer and CDN
-
-This is the core of the serving infrastructure.
-
-1.  **Reserve a Static IP Address:**
-    Create a global static IP address that will point to your application.
+2.  **Add Firebase to Your GCP Project:**
+    If you haven't already, associate Firebase with your existing GCP project.
     ```bash
-    gcloud compute addresses create flashcards-ip --global
+    firebase projects:addfirebase YOUR_PROJECT_ID
     ```
-    Note the IP address that is returned. You will need it for your DNS settings.
+
+3.  **Initialize Firebase Hosting:**
+    Run the `init` command from the root of your project directory (the one containing the new `public` folder).
     ```bash
-    gcloud compute addresses describe flashcards-ip --global
+    firebase init hosting
     ```
 
-2.  **Create a Backend Bucket:**
-    This connects your GCS bucket to the load balancer and enables Cloud CDN.
+4.  **Follow the Prompts:**
+    Answer the configuration questions as follows:
+    -   `? Please select an option:` **Use an existing project** (and select your project from the list).
+    -   `? What do you want to use as your public directory?` **public** (This must match the directory you created).
+    -   `? Configure as a single-page app (rewrite all urls to /index.html)?` **Yes** (This is critical for React routing).
+    -   `? Set up automatic builds and deploys with GitHub?` **No** (We are deploying manually from Cloud Shell).
+    -   `? File public/index.html already exists. Overwrite?` **No** (You want to keep your existing `index.html`).
+
+    This process creates two new files in your root directory: `.firebaserc` and `firebase.json`.
+
+### Step 4: Deploy the Application
+
+With the configuration complete, you can now deploy the app.
+
+1.  **Run the Deploy Command:**
     ```bash
-    gcloud compute backend-buckets create flashcards-backend-bucket \
-        --gcs-bucket-name=BUCKET_NAME \
-        --enable-cdn
+    firebase deploy --only hosting
     ```
 
-3.  **Create URL Map and HTTP Proxy:**
-    This defines how requests are routed. For a single-page app, all paths route to the same backend.
-    ```bash
-    # Create the URL map
-    gcloud compute url-maps create flashcards-url-map \
-        --default-backend-bucket=flashcards-backend-bucket
+2.  **Access Your App:**
+    After the deployment finishes, the CLI will output a **Hosting URL** (e.g., `https://your-project-id.web.app`). You can open this URL in your browser to see your live application.
 
-    # Create the target proxy
-    gcloud compute target-http-proxies create flashcards-http-proxy \
-        --url-map=flashcards-url-map
-    ```
+### Step 5: (Optional) Connect a Custom Domain
 
-4.  **Create a Forwarding Rule:**
-    This rule ties your static IP address to the load balancer configuration, directing traffic.
-    ```bash
-    gcloud compute forwarding-rules create flashcards-forwarding-rule \
-        --address=flashcards-ip \
-        --global \
-        --target-http-proxy=flashcards-http-proxy \
-        --ports=80
-    ```
-    At this point, your app should be accessible via HTTP at the static IP address you reserved.
+Firebase makes it easy to use your own domain name.
 
-### Step 4: Configure DNS and SSL (Custom Domain)
+1.  **Navigate to the Firebase Console:**
+    Go to the [Firebase Console](https://console.firebase.google.com/), select your project, and go to the **Hosting** section in the left-hand menu.
 
-To enable HTTPS, you need to point your domain to the load balancer and create an SSL certificate.
+2.  **Add Custom Domain:**
+    Click the **"Add custom domain"** button and follow the wizard. Firebase will provide you with DNS records (usually a `TXT` record for verification and two `A` records) to add at your domain registrar.
 
-1.  **Create a Google-managed SSL Certificate:**
-    Replace `your-flashcards.com` with your actual domain name.
-    ```bash
-    gcloud compute ssl-certificates create flashcards-ssl-cert \
-        --domains=your-flashcards.com
-    ```
-
-2.  **Create an HTTPS Target Proxy:**
-    ```bash
-    gcloud compute target-https-proxies create flashcards-https-proxy \
-        --url-map=flashcards-url-map \
-        --ssl-certificates=flashcards-ssl-cert
-    ```
-
-3.  **Create an HTTPS Forwarding Rule:**
-    This rule directs HTTPS traffic (port 443) to your new HTTPS proxy.
-    ```bash
-    gcloud compute forwarding-rules create flashcards-https-rule \
-        --address=flashcards-ip \
-        --global \
-        --target-https-proxy=flashcards-https-proxy \
-        --ports=443
-    ```
-
-4.  **Update Your DNS Records:**
-    Go to your domain registrar's DNS management panel and create an **A record** that points your domain (e.g., `your-flashcards.com`) to the static IP address you reserved in Step 3.
-
-    - **Record Type:** `A`
-    - **Host/Name:** `@` (or your domain name)
-    - **Value/Points to:** The static IP address.
-
-    It may take some time for DNS changes to propagate. Once they do, and the SSL certificate is provisioned (this can take up to an hour), your application will be live and secure at `https://your-flashcards.com`.
-
-### Step 5: Access Your Application
-
-You can now access your fully deployed, globally distributed, and secure Gemini Flashcards application via your custom domain.
+3.  **Wait for Provisioning:**
+    Once you've added the DNS records, Firebase will automatically provision an SSL certificate for your domain. This can take up to an hour.
 
 ---
 
@@ -189,19 +146,23 @@ Since this project uses import maps and does not have a build step, you can run 
     ```
 
 2.  **Run the server:**
-    From the project's root directory, run:
+    From the project's root directory, run the server on the `public` folder:
     ```bash
-    serve .
+    serve public
     ```
     The application will be available at the local address provided (e.g., `http://localhost:3000`).
     
 ## Application Structure
 
--   `index.html`: The main entry point with Tailwind CSS CDN and import maps.
--   `index.tsx`: The root of the React application.
--   `App.tsx`: The main component, handling routing and layout.
--   `context/AppContext.tsx`: Global state management for user sessions, API keys, and learning progress.
--   `hooks/`: Contains custom hooks for interacting with `localStorage`, the Gemini API, and the Web Speech API.
--   `components/`: Contains all React components, organized by function.
--   `types.ts`: Global TypeScript type definitions.
--   `constants.ts`: Shared application constants, such as SRS intervals.
+-   `public/`: The public root directory for Firebase Hosting.
+    -   `index.html`: The main entry point with Tailwind CSS CDN and import maps.
+    -   `index.tsx`: The root of the React application.
+    -   `App.tsx`: The main component, handling routing and layout.
+    -   `context/AppContext.tsx`: Global state management for user sessions, API keys, and learning progress.
+    -   `hooks/`: Contains custom hooks for interacting with `localStorage`, the Gemini API, and the Web Speech API.
+    -   `components/`: Contains all React components, organized by function.
+    -   `types.ts`: Global TypeScript type definitions.
+    -   `constants.ts`: Shared application constants, such as SRS intervals.
+-   `firebase.json`: Firebase configuration file.
+-   `.firebaserc`: Firebase project association file.
+-   `README.md`: This file.
